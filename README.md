@@ -6,7 +6,7 @@
 
 ## Project Overview
 
-This SEO Rank Tracker is a web application that allows users to track search engine rankings for specified keywords across different projects. It utilizes multiple 3rd party APIs to fetch SERP data, such as [SpaceSERP](https://appsumo.8odi.net/nLaMra) (lifetime deal on AppSumo), and search volume information, providing advanced features for data analysis and visualization.
+This SEO Rank Tracker is a web application that allows users to track search engine rankings for specified keywords across different projects. It supports multiple SERP data providers – [SpaceSERP](https://appsumo.8odi.net/nLaMra) *or* [FetchSERP](https://fetchserp.com) – which you can switch between with an environment variable. Search-volume information is sourced from Grepwords. Together these services power the advanced analysis and visualisation features of the app.
 
 ### Key Features
 
@@ -28,6 +28,7 @@ This SEO Rank Tracker is a web application that allows users to track search eng
 - Database: SQLite
 - API Integrations: 
   - [SpaceSERP](https://appsumo.8odi.net/nLaMra) for SERP data (lifetime deal on AppSumo)
+  - [FetchSERP](https://fetchserp.com) for SERP data (alternative provider – set `SERP_PROVIDER=fetchserp`)
   - Grepwords for search volume data
   - Google Search Console API for additional search data
 
@@ -60,7 +61,20 @@ This SEO Rank Tracker is a web application that allows users to track search eng
 
 5. **Create a `.env` file in the backend directory and add your API keys:**
    ```env
+   # --- SERP providers -------------------------------------------------------
+   # Choose one of the two providers below and set `SERP_PROVIDER` accordingly.
+   # Default provider is `spaceserp` if this variable is omitted.
+
+   # SpaceSERP (https://spaceserp.com)
    SPACESERP_API_KEY=your_spaceserp_api_key_here
+
+   # FetchSERP (https://fetchserp.com)
+   FETCHSERP_API_KEY=your_fetchserp_api_key_here
+
+   # Select provider: "spaceserp" (default) or "fetchserp"
+   SERP_PROVIDER=spaceserp
+
+   # --- Other services -------------------------------------------------------
    GREPWORDS_API_KEY=your_grepwords_api_key_here
    GOOGLE_CLIENT_ID=your_google_client_id_here
    GOOGLE_CLIENT_SECRET=your_google_client_secret_here
@@ -140,7 +154,7 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## Acknowledgments
 
-- Thanks to [SpaceSERP](https://appsumo.8odi.net/nLaMra) for providing the SERP data API
+- Thanks to [SpaceSERP](https://appsumo.8odi.net/nLaMra) and [FetchSERP](https://fetchserp.com) for providing SERP data APIs
 - Thanks to Grepwords for providing the search volume data API
 - Vue.js and FastAPI communities for their excellent documentation and tools
 

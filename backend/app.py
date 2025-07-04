@@ -203,6 +203,20 @@ GREPWORDS_API_KEY = os.getenv("GREPWORDS_API_KEY")
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
 
+# FetchSERP API Key (used as fallback provider for SERP data)
+FETCHSERP_API_KEY = os.getenv("FETCHSERP_API_KEY")
+
+# ---------------------------------------------------------------------------
+# SERP provider selection
+# ---------------------------------------------------------------------------
+# Set ``SERP_PROVIDER`` to either ``"spaceserp"`` or ``"fetchserp"`` (case-
+# insensitive) to choose which external API is used by ``fetch_serp_data``.
+# If unset, SpaceSERP is used by default to preserve existing behaviour.
+#
+#   export SERP_PROVIDER=fetchserp  # example – use FetchSERP exclusively
+# ---------------------------------------------------------------------------
+SERP_PROVIDER = os.getenv("SERP_PROVIDER", "spaceserp").lower()
+
 standard_ctr_curve = {
     1: 0.2688,  # 26.88%
     2: 0.1173,  # 11.73%
@@ -1434,22 +1448,103 @@ async def fetch_with_retry(session, url, params, max_retries=3, base_delay=1):
             else:
                 raise
 
-async def fetch_serp_data(keyword):
-    url = "https://api.spaceserp.com/google/search"
-    params = {
-        "apiKey": SPACESERP_API_KEY,
-        "q": keyword,
-        # "location": "Midtown Manhattan,New York,United States",
-        "domain": "google.com",
-        "gl": "us",
-        "hl": "en",
-        "resultFormat": "json",
-        "device": "desktop",
-        "pageSize": 100,
-        "pageNumber": 1
-    }
-    async with aiohttp.ClientSession() as session:
-        return await fetch_with_retry(session, url, params)
+async def fetch_serp_data(keyword: str, provider: Optional[str] = None):
+    """Fetch SERP data for *keyword* using the selected provider.
+
+    The provider can be specified explicitly via the *provider* argument or by
+    setting the ``SERP_PROVIDER`` environment variable (defaults to
+    ``"spaceserp"``).  Supported values:
+
+    * ``"spaceserp"``   – use https://spaceserp.com REST API
+    * ``"fetchserp"``   – use https://fetchserp.com via the official SDK
+
+    No automatic fallback is performed – if the chosen provider fails an
+    exception is raised so the caller can decide how to handle it.
+    """
+
+    provider = (provider or SERP_PROVIDER).lower()
+
+    if provider == "spaceserp":
+        url = "https://api.spaceserp.com/google/search"
+        params = {
+            "apiKey": SPACESERP_API_KEY,
+            "q": keyword,
+            # "location": "Midtown Manhattan,New York,United States",
+            "domain": "google.com",
+            "gl": "us",
+            "hl": "en",
+            "resultFormat": "json",
+            "device": "desktop",
+            "pageSize": 100,
+            "pageNumber": 1,
+        }
+
+        async with aiohttp.ClientSession() as session:
+            return await fetch_with_retry(session, url, params)
+
+    elif provider == "fetchserp":
+        return await fetch_serp_data_fetchserp(keyword)
+
+    else:
+        raise ValueError(f"Unsupported SERP provider: {provider}")
+
+
+# ---------------------------------------------------------------------------
+# FetchSERP helper (fallback provider)
+# ---------------------------------------------------------------------------
+
+async def fetch_serp_data_fetchserp(keyword: str):
+    """Retrieve SERP data for *keyword* from FetchSERP.
+
+    Uses the official fetchserp-python SDK (dependency-free apart from
+    `requests`).  Because the SDK is synchronous, we wrap the blocking
+    call in `asyncio.to_thread` so as not to block the event loop.
+    """
+
+    FETCHSERP_API_KEY = os.getenv("FETCHSERP_API_KEY")
+    if not FETCHSERP_API_KEY:
+        raise Exception("FETCHSERP_API_KEY environment variable is not set")
+
+    def _blocking_call():
+        """Perform the blocking FetchSERP request and normalise the response."""
+
+        from fetchserp import FetchSERPClient  # local import to avoid cost when not used
+
+        with FetchSERPClient(FETCHSERP_API_KEY) as fs:
+            response = fs.get_serp(query=keyword, pages_number=1)
+
+        # Expected structure documented at
+        # https://github.com/fetchSERP/fetchserp-python →
+        # {
+        #   "data": {
+        #     "query": "...",
+        #     "results": [{
+        #        "url": "...",
+        #        "ranking": 1,
+        #        ...
+        #     }]
+        #   }
+        # }
+
+        results = response.get("data", {}).get("results", []) if response else []
+
+        organic_results = []
+        for item in results:
+            link = item.get("url") or ""
+            position = item.get("ranking")  # FetchSERP uses `ranking`
+
+            organic_results.append({
+                "link": link,
+                "title": item.get("title"),
+                "snippet": item.get("description"),
+                "domain": extract_domain(link) if link else "",
+                "position": position,
+            })
+
+        return {"organic_results": organic_results}
+
+    # Run the blocking FetchSERP request in a thread
+    return await asyncio.to_thread(_blocking_call)
 
 def add_serp_data(keyword_id, serp_data, search_volume):
     conn = get_db_connection()
